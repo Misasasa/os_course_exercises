@@ -17,10 +17,14 @@
 ## 思考题
 
 - 你理解的对于类似ucore这样需要进程/虚存/文件系统的操作系统，在硬件设计上至少需要有哪些直接的支持？至少应该提供哪些功能的特权指令？
+答：进程需要时钟中断，虚存需要地址映射，文件系统需要非易失介质。需要触发中断，设置页表，执行I/O等特权指令。
 
 - 你理解的x86的实模式和保护模式有什么区别？物理地址、线性地址、逻辑地址的含义分别是什么？
+答：实模式和保护模式区别在于内存是否受到保护。实模式下进程可以获得的内存地址为物理地址，可以任意修改其他进程甚至系统进程的数据；保护模式下进程看到的内存地址是本进程专用的逻辑地址，需要由操作系统转换成物理地址，保证了内存的安全。
+物理地址是物理上内存中存储数据的地址；线性地址是由段机制形成的地址，在使用段机制的情况下是物理地址和逻辑地址转换的中间层，不使用段机制的情况下线性地址就是物理地址；逻辑地址是进程的访存指令给出的地址，需要通过操作系统转换为线性地址和物理地址。
 
 - 你理解的risc-v的特权模式有什么区别？不同 模式在地址访问方面有何特征？
+答：risc-v有四种特权级：用户级、管理员级、虚拟机监视器级、机器级，序号分别为00、01、10、11。risc-v中，地址从高到低的第三、四位表示访问该地址需要的权限，若特权级的序号大于等于需要的权限，则可以访问，否则不能访问。
 
 - 理解ucore中list_entry双向链表数据结构及其4个基本操作函数和ucore中一些基于它的代码实现（此题不用填写内容）
 
@@ -39,6 +43,7 @@
     unsigned gd_off_31_16 : 16;        // high bits of offset in segment
  };
 ```
+答：这是一个结构体的代码，冒号后面的数字表示结构体中每个元素占用的位数。
 
 - 对于如下的代码段，
 
@@ -62,18 +67,65 @@ intr=8;
 SETGATE(intr, 1,2,3,0);
 ```
 请问执行上述指令后， intr的值是多少？
+答：由于intr为32位的unsigned，将其当作gatedesc来使用，也只能对应gatedesc的低32位，其低16位对应gd_off_15_0，被设置成3，高16位对应gd_ss，被设置成2，故intr的值为0x00020003。
 
 ### 课堂实践练习
 
 #### 练习一
 
 1. 请在ucore中找一段你认为难度适当的AT&T格式X86汇编代码，尝试解释其含义。
+答：trapentry.s中有如下代码：
+```
+# vectors.S sends all traps here.
+.text
+.globl __alltraps
+__alltraps:
+    # push registers to build a trap frame
+    # therefore make the stack look like a struct trapframe
+    pushl %ds
+    pushl %es
+    pushl %fs
+    pushl %gs
+    pushal
 
-2. (option)请在rcore中找一段你认为难度适当的RV汇编代码，尝试解释其含义。
+    # load GD_KDATA into %ds and %es to set up data segments for kernel
+    movl $GD_KDATA, %eax
+    movw %ax, %ds
+    movw %ax, %es
+
+    # push %esp to pass a pointer to the trapframe as an argument to trap()
+    pushl %esp
+
+    # call trap(tf), where tf=%esp
+    call trap
+
+    # pop the pushed stack pointer
+    popl %esp
+
+    # return falls through to trapret...
+.globl __trapret
+__trapret:
+    # restore registers from stack
+    popal
+
+    # restore %ds, %es, %fs and %gs
+    popl %gs
+    popl %fs
+    popl %es
+    popl %ds
+
+    # get rid of the trap number and error code
+    addl $0x8, %esp
+    iret
+```
+__alltraps中将%ds，%es，%fs，%gs以及当前的栈顶指针均保存起来成为一个中断帧，以栈顶指针为参数调动中断函数。然后执行中断现场恢复，将栈顶指针，%gs，%fa，%es，%ds均恢复，然后将其他中断信息也消除。
+
+1. (option)请在rcore中找一段你认为难度适当的RV汇编代码，尝试解释其含义。
 
 #### 练习二
 
 宏定义和引用在内核代码中很常用。请枚举ucore或rcore中宏定义的用途，并举例描述其含义。
+答：内核中宏定义的用途包括类型检查、变长参数列表、宏参数静态检查等。
 
 #### reference
  - [Intel格式和AT&T格式汇编区别](http://www.cnblogs.com/hdk1993/p/4820353.html)
